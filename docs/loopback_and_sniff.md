@@ -34,4 +34,5 @@ subaru_ssm2:
 
 ### Verhalten
 - Komponente sendet **keine** Requests.
-- Eingehende Bytes werden als Hex geloggt (`Sniff RX: 0x..`).
+- Eingehende Bytes werden gebündelt als Hex-Frame geloggt
+  (`Sniff RX (N bytes): ..`).

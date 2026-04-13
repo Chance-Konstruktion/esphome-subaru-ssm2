@@ -1,5 +1,7 @@
 #include "subaru_ssm2.h"
 
+#include <cstdio>
+
 #include "esphome/core/log.h"
 
 namespace esphome {
@@ -11,6 +13,7 @@ void SubaruSSM2Component::setup() {
   // Drain any boot-time noise on the UART.
   while (this->available())
     this->read();
+  this->sniff_buffer_.clear();
 }
 
 void SubaruSSM2Component::dump_config() {
@@ -39,6 +42,34 @@ uint8_t SubaruSSM2Component::checksum_(const std::vector<uint8_t> &frame) const 
   return static_cast<uint8_t>(sum & 0xFF);
 }
 
+std::string SubaruSSM2Component::bytes_to_hex_(const std::vector<uint8_t> &bytes) const {
+  if (bytes.empty())
+    return "";
+
+  std::string out;
+  out.reserve(bytes.size() * 3);
+  char buf[5];
+  for (size_t i = 0; i < bytes.size(); i++) {
+    std::snprintf(buf, sizeof(buf), "%02X", bytes[i]);
+    out.append(buf);
+    if (i + 1 < bytes.size())
+      out.push_back(' ');
+  }
+  return out;
+}
+
+void SubaruSSM2Component::flush_sniff_buffer_(bool force) {
+  if (this->sniff_buffer_.empty())
+    return;
+
+  if (!force && (millis() - this->sniff_last_rx_at_ < this->sniff_flush_ms_))
+    return;
+
+  ESP_LOGD(TAG, "Sniff RX (%u bytes): %s", (unsigned) this->sniff_buffer_.size(),
+           this->bytes_to_hex_(this->sniff_buffer_).c_str());
+  this->sniff_buffer_.clear();
+}
+
 bool SubaruSSM2Component::should_poll_() const {
   if (this->motor_running_sensor_ == nullptr)
     return true;
@@ -62,6 +93,7 @@ void SubaruSSM2Component::send_request_(uint8_t parameter) {
       0x80, 0x10, 0xF0, 0x05, 0xA8, 0x00, 0x00, 0x00, parameter,
   };
   request.push_back(this->checksum_(request));
+  ESP_LOGV(TAG, "TX request for 0x%02X: %s", parameter, this->bytes_to_hex_(request).c_str());
 
   // Discard any stale bytes before issuing the new request.
   while (this->available())
@@ -118,7 +150,8 @@ void SubaruSSM2Component::process_response_() {
                              this->rx_buffer_.begin() + hdr + 4 + payload_len);
   const uint8_t expected_csum = this->rx_buffer_[hdr + 4 + payload_len];
   if (this->checksum_(frame) != expected_csum) {
-    ESP_LOGW(TAG, "Checksum mismatch for 0x%02X", this->current_parameter_);
+    ESP_LOGW(TAG, "Checksum mismatch for 0x%02X (calc 0x%02X != got 0x%02X) frame: %s",
+             this->current_parameter_, this->checksum_(frame), expected_csum, this->bytes_to_hex_(frame).c_str());
     this->state_ = STATE_IDLE;
     return;
   }
@@ -126,6 +159,13 @@ void SubaruSSM2Component::process_response_() {
   // Payload byte 0 is the status (0xE8 = response to A8). Data starts at +1.
   if (payload_len < 1 + cfg.data_length) {
     ESP_LOGW(TAG, "Payload too short for 0x%02X", this->current_parameter_);
+    this->state_ = STATE_IDLE;
+    return;
+  }
+  const uint8_t status = this->rx_buffer_[hdr + 4];
+  if (status != 0xE8) {
+    ESP_LOGW(TAG, "Unexpected response status 0x%02X for 0x%02X; raw frame: %s", status,
+             this->current_parameter_, this->bytes_to_hex_(frame).c_str());
     this->state_ = STATE_IDLE;
     return;
   }
@@ -154,9 +194,10 @@ void SubaruSSM2Component::process_response_() {
 void SubaruSSM2Component::loop() {
   if (this->sniff_mode_) {
     while (this->available()) {
-      const uint8_t b = this->read();
-      ESP_LOGD(TAG, "Sniff RX: 0x%02X", b);
+      this->sniff_buffer_.push_back(this->read());
+      this->sniff_last_rx_at_ = millis();
     }
+    this->flush_sniff_buffer_();
     return;
   }
 
