@@ -1,0 +1,384 @@
+# ============================================================
+#  subaru-sg5  –  ESPHome
+#  ESP32-C3 · INA3221 · SHT4x · BLE-Proxy · WireGuard · SSM2
+#  v6.1 – Wire Whisperer Integration (cleanup)
+# ============================================================
+
+substitutions:
+  name: subaru-sg5
+  friendly_name: subaru-sg5
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+  comment: "Subaru Forester XT - Wire Whisperer Edition"
+  name_add_mac_suffix: false
+
+  on_boot:
+    - priority: 600
+      then:
+        - deep_sleep.prevent: my_deep_sleep
+        - logger.log: "Boot [1/5]: Deep Sleep blockiert"
+        - delay: 10s
+        - logger.log: "Boot [2/5]: Zeitsynchronisation..."
+        - lambda: |-
+            auto t = id(sntp_time).now();
+            if (t.timestamp == 0) id(sntp_time).update();
+        - delay: 5s
+        - component.update: ina3221_sensor
+        - delay: 2s
+        - lambda: |-
+            id(boot_complete) = true;
+            ESP_LOGI("boot", "=== Boot abgeschlossen ===");
+
+# ============================================================
+#  EXTERNAL COMPONENTS (Wire Whisperer)
+# ============================================================
+external_components:
+  - source: github://Chance-Konstruktion/esphome-wire-whisperer@main
+    components: [subaru_ssm2]
+
+# ============================================================
+#  BOARD
+# ============================================================
+esp32:
+  board: esp32-c3-devkitm-1
+  framework:
+    type: esp-idf
+
+packages:
+  esphome.bluetooth-proxy: github://esphome/bluetooth-proxies/esp32-generic/esp32-generic-c3.yaml@main
+
+# ============================================================
+#  LOGGER
+# ============================================================
+logger:
+  level: DEBUG
+
+# ============================================================
+#  WLAN & API
+# ============================================================
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+  fast_connect: true
+  use_address: 172.31.0.3
+
+api:
+  encryption:
+    key: !secret api_key_sg5
+
+ota:
+  - platform: esphome
+    password: !secret ota_password_sg5
+
+web_server:
+  port: 80
+  version: 3
+
+# ============================================================
+#  WIREGUARD
+# ============================================================
+wireguard:
+  address: 172.31.0.3
+  netmask: 255.255.255.0
+  private_key: !secret wg_private_key_sg5
+  peer_endpoint: schanz.ipv64.net
+  peer_port: 51821
+  peer_public_key: /bM1ABBo/q1UfTy2rUQH7K7iUqmLTFLzgHxENKLBgRE=
+  peer_allowed_ips:
+    - 0.0.0.0/0
+  peer_persistent_keepalive: 25s
+
+# ============================================================
+#  ZEIT
+# ============================================================
+time:
+  - platform: sntp
+    id: sntp_time
+  - platform: homeassistant
+    id: ha_time
+
+# ============================================================
+#  GLOBALS (Sleep-Logik)
+# ============================================================
+globals:
+  - id: boot_complete
+    type: bool
+    initial_value: 'false'
+  - id: sleep_minutes
+    type: int
+    initial_value: '15'
+
+# ============================================================
+#  I2C & UART
+# ============================================================
+i2c:
+  sda: GPIO3
+  scl: GPIO4
+  scan: true
+
+uart:
+  # UART für K-Line (Subaru SSM2)
+  - id: kline_uart
+    tx_pin: GPIO6
+    rx_pin: GPIO5
+    baud_rate: 4800
+    data_bits: 8
+    stop_bits: 1
+    parity: NONE
+
+# ============================================================
+#  SENSOREN
+# ============================================================
+sensor:
+  - platform: ina3221
+    address: 0x40
+    id: ina3221_sensor
+    update_interval: never
+
+    channel_1:
+      bus_voltage:
+        name: "Startbatterie"
+        id: startbatt_voltage
+        accuracy_decimals: 3
+        unit_of_measurement: "V"
+        device_class: voltage
+        state_class: measurement
+        filters:
+          - multiply: 0.949
+
+    channel_2:
+      shunt_resistance: 0.1 ohm
+      bus_voltage:
+        name: "Zusatzbatterie"
+        id: battery_voltage
+        accuracy_decimals: 3
+        unit_of_measurement: "V"
+        device_class: voltage
+        state_class: measurement
+        filters:
+          - multiply: 0.949
+        on_value:
+          then:
+            - lambda: |-
+                float v = x;
+                if (isnan(v)) return;
+                if      (v > 13.2)  id(sleep_minutes) = 0;
+                else if (v >= 12.6) id(sleep_minutes) = 5;
+                else if (v >= 12.4) id(sleep_minutes) = 15;
+                else if (v >= 12.2) id(sleep_minutes) = 60;
+                else                id(sleep_minutes) = 180;
+
+    channel_3:
+      shunt_resistance: 0.1 ohm
+      bus_voltage:
+        name: "ESP32 Spannung"
+        accuracy_decimals: 3
+        unit_of_measurement: "V"
+        device_class: voltage
+        state_class: measurement
+
+      power:
+        name: "ESP32 Leistung"
+        accuracy_decimals: 3
+        unit_of_measurement: "W"
+        device_class: power
+        state_class: measurement
+        filters:
+          - multiply: -1
+
+  - platform: sht4x
+    update_interval: 10s
+    temperature:
+      name: "Innenraum Temperatur"
+      id: innen_temp
+      accuracy_decimals: 1
+      device_class: temperature
+      state_class: measurement
+    humidity:
+      name: "Innenraum Luftfeuchtigkeit"
+      id: innen_humidity
+      accuracy_decimals: 1
+      device_class: humidity
+      state_class: measurement
+
+# ============================================================
+#  BINARY SENSOREN
+#  (Hinweis: alles in EINEM binary_sensor: Block – sonst wird
+#   einer der Blöcke von ESPHome verworfen!)
+# ============================================================
+binary_sensor:
+  - platform: template
+    name: "Zusatzbatterie Alarm"
+    id: low_battery_alarm
+    device_class: battery
+
+  - platform: template
+    name: "Motor läuft"
+    id: motor_running
+    device_class: running
+    lambda: |-
+      if (isnan(id(battery_voltage).state)) return false;
+      return id(battery_voltage).state > 13.2;
+
+  - platform: homeassistant
+    id: ha_wartungsmodus
+    entity_id: input_boolean.wartungsmodus
+
+# ============================================================
+#  SUBARU SSM2 (Wire Whisperer Phase 1)
+# ============================================================
+subaru_ssm2:
+  id: subaru_ecu
+  uart: kline_uart
+  update_interval: 5s
+  motor_running_sensor: motor_running
+  request_delay: 50ms
+  response_timeout: 200ms
+
+  parameters:
+    - id: 0x08
+      name: "Kühlmitteltemperatur"
+      unit_of_measurement: "°C"
+      device_class: temperature
+    - id: 0x0A
+      name: "Öltemperatur"
+      unit_of_measurement: "°C"
+      device_class: temperature
+    - id: 0x0F
+      name: "Motordrehzahl"
+      unit_of_measurement: "rpm"
+    - id: 0x15
+      name: "Batteriespannung ECU"
+      unit_of_measurement: "V"
+      device_class: voltage
+
+    - id: 0x24
+      name: "Ladedruck relativ"
+      unit_of_measurement: "bar"
+      device_class: pressure
+    - id: 0x11
+      name: "Saugrohrdruck absolut"
+      unit_of_measurement: "bar"
+      device_class: pressure
+    - id: 0x25
+      name: "Boost Target"
+      unit_of_measurement: "bar"
+      device_class: pressure
+    - id: 0x26
+      name: "Wastegate Duty"
+      unit_of_measurement: "%"
+
+    - id: 0x3D
+      name: "IAM"
+    - id: 0x3C
+      name: "Knock Correction"
+      unit_of_measurement: "°"
+    - id: 0x13
+      name: "Zündzeitpunkt"
+      unit_of_measurement: "°"
+
+    - id: 0x2A
+      name: "Tankfüllstand"
+      unit_of_measurement: "%"
+    - id: 0x2B
+      name: "Momentanverbrauch"
+      unit_of_measurement: "L/100km"
+    - id: 0x2C
+      name: "Durchschnittsverbrauch"
+      unit_of_measurement: "L/100km"
+
+    - id: 0x16
+      name: "Luftdurchsatz MAF"
+      unit_of_measurement: "g/s"
+    - id: 0x1E
+      name: "Ansauglufttemperatur"
+      unit_of_measurement: "°C"
+      device_class: temperature
+    - id: 0x17
+      name: "Drosselklappenstellung"
+      unit_of_measurement: "%"
+    - id: 0x18
+      name: "Gaspedalstellung"
+      unit_of_measurement: "%"
+
+# ============================================================
+#  1-WIRE AUTO-DISCOVERY (Prototype – auskommentiert)
+# ============================================================
+# external_components:
+#   - source: github://Chance-Konstruktion/esphome-wire-whisperer@main
+#     components: [onewire_auto]
+#
+# one_wire:
+#   - platform: gpio
+#     pin: GPIO7
+#     id: onewire_bus
+#
+# onewire_auto:
+#   one_wire_id: onewire_bus
+#   discovery_prefix: "subaru_1wire"
+#   strong_pullup: true
+#   update_interval: 60min
+#   scan_on_boot: true
+
+# ============================================================
+#  DEEP SLEEP & INTERVALLE
+# ============================================================
+deep_sleep:
+  id: my_deep_sleep
+
+interval:
+  - interval: 500ms
+    then:
+      - if:
+          condition:
+            or:
+              - binary_sensor.is_on: motor_running
+              - lambda: 'return !id(boot_complete);'
+          then:
+            - component.update: ina3221_sensor
+
+  - interval: 5s
+    then:
+      - if:
+          condition:
+            lambda: |-
+              return id(boot_complete) && !id(motor_running).state;
+          then:
+            - component.update: ina3221_sensor
+            - delay: 500ms
+            - if:
+                condition:
+                  lambda: |-
+                    if (!id(boot_complete)) return false;
+                    float v = id(battery_voltage).state;
+                    if (!isnan(v) && v > 13.2) return false;
+                    if (id(ha_wartungsmodus).state) return false;
+                    if (id(sleep_minutes) <= 0) return false;
+                    return true;
+                then:
+                  - lambda: |-
+                      ESP_LOGI("sleep", "Deep Sleep: %d min", id(sleep_minutes));
+                  - deep_sleep.allow: my_deep_sleep
+                  - deep_sleep.enter:
+                      id: my_deep_sleep
+                      sleep_duration: !lambda |-
+                        return (uint32_t) id(sleep_minutes) * 60000UL;
+                else:
+                  - deep_sleep.prevent: my_deep_sleep
+
+# ============================================================
+#  LED & OUTPUT
+# ============================================================
+output:
+  - platform: ledc
+    pin: GPIO8
+    id: blue_led_pwm
+    inverted: true
+
+light:
+  - platform: monochromatic
+    name: "ESP32 blueLED"
+    output: blue_led_pwm
+    id: status_led
