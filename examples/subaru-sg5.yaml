@@ -232,6 +232,8 @@ binary_sensor:
 subaru_ssm2:
   id: subaru_ecu
   uart: kline_uart
+  # Quick-Guide: docs/loopback_and_sniff.md
+  # mode: sniff   # Listen-only: sendet keine Requests, loggt nur RX-Bytes
   update_interval: 5s
   motor_running_sensor: motor_running
   request_delay: 50ms
