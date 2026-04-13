@@ -23,6 +23,7 @@ class SubaruSSM2Component : public PollingComponent, public uart::UARTDevice {
 
   void set_request_delay(uint32_t request_delay_ms) { this->request_delay_ms_ = request_delay_ms; }
   void set_response_timeout(uint32_t timeout_ms) { this->response_timeout_ms_ = timeout_ms; }
+  void set_sniff_mode(bool sniff_mode) { this->sniff_mode_ = sniff_mode; }
   void set_motor_running_sensor(binary_sensor::BinarySensor *sensor) { this->motor_running_sensor_ = sensor; }
   void add_parameter_sensor(uint8_t parameter, sensor::Sensor *sensor);
 
@@ -40,6 +41,7 @@ class SubaruSSM2Component : public PollingComponent, public uart::UARTDevice {
 
   std::map<uint8_t, sensor::Sensor *> parameter_sensors_;
   binary_sensor::BinarySensor *motor_running_sensor_{nullptr};
+  bool sniff_mode_{false};
   uint32_t request_delay_ms_{50};
   uint32_t response_timeout_ms_{200};
 

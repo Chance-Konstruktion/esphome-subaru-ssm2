@@ -15,6 +15,7 @@ void SubaruSSM2Component::setup() {
 
 void SubaruSSM2Component::dump_config() {
   ESP_LOGCONFIG(TAG, "Subaru SSM2:");
+  ESP_LOGCONFIG(TAG, "  Mode:             %s", this->sniff_mode_ ? "sniff" : "normal");
   ESP_LOGCONFIG(TAG, "  Request delay:    %u ms", this->request_delay_ms_);
   ESP_LOGCONFIG(TAG, "  Response timeout: %u ms", this->response_timeout_ms_);
   LOG_UPDATE_INTERVAL(this);
@@ -151,6 +152,14 @@ void SubaruSSM2Component::process_response_() {
 }
 
 void SubaruSSM2Component::loop() {
+  if (this->sniff_mode_) {
+    while (this->available()) {
+      const uint8_t b = this->read();
+      ESP_LOGD(TAG, "Sniff RX: 0x%02X", b);
+    }
+    return;
+  }
+
   // Read whatever bytes have arrived; never block.
   while (this->available()) {
     this->rx_buffer_.push_back(this->read());
@@ -183,6 +192,11 @@ void SubaruSSM2Component::loop() {
 }
 
 void SubaruSSM2Component::update() {
+  if (this->sniff_mode_) {
+    ESP_LOGV(TAG, "Sniff mode active: no requests sent");
+    return;
+  }
+
   if (!this->should_poll_()) {
     ESP_LOGD(TAG, "Skipping SSM2 polling while engine is not running");
     return;

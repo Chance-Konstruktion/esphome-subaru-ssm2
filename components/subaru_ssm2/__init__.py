@@ -15,6 +15,10 @@ CONF_REQUEST_DELAY = "request_delay"
 CONF_RESPONSE_TIMEOUT = "response_timeout"
 CONF_MOTOR_RUNNING_SENSOR = "motor_running_sensor"
 CONF_PARAMETER_ID = "id"
+CONF_MODE = "mode"
+
+MODE_NORMAL = "normal"
+MODE_SNIFF = "sniff"
 
 subaru_ssm2_ns = cg.esphome_ns.namespace("subaru_ssm2")
 SubaruSSM2Component = subaru_ssm2_ns.class_(
@@ -47,6 +51,9 @@ CONFIG_SCHEMA = (
             cv.Optional(CONF_MOTOR_RUNNING_SENSOR): cv.use_id(
                 binary_sensor.BinarySensor
             ),
+            cv.Optional(CONF_MODE, default=MODE_NORMAL): cv.one_of(
+                MODE_NORMAL, MODE_SNIFF, lower=True
+            ),
             cv.Required(CONF_PARAMETERS): cv.ensure_list(PARAMETER_SCHEMA),
         }
     ).extend(cv.polling_component_schema("5s"))
@@ -60,6 +67,7 @@ async def to_code(config):
 
     cg.add(var.set_request_delay(config[CONF_REQUEST_DELAY].total_milliseconds))
     cg.add(var.set_response_timeout(config[CONF_RESPONSE_TIMEOUT].total_milliseconds))
+    cg.add(var.set_sniff_mode(config[CONF_MODE] == MODE_SNIFF))
 
     if CONF_MOTOR_RUNNING_SENSOR in config:
         motor_running_sensor = await cg.get_variable(
