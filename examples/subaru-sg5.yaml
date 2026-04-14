@@ -32,10 +32,10 @@ esphome:
             ESP_LOGI("boot", "=== Boot abgeschlossen ===");
 
 # ============================================================
-#  EXTERNAL COMPONENTS (Wire Whisperer)
+#  EXTERNAL COMPONENTS
 # ============================================================
 external_components:
-  - source: github://Chance-Konstruktion/esphome-wire-whisperer@main
+  - source: github://Chance-Konstruktion/esphome-subaru-ssm2@main
     components: [subaru_ssm2]
 
 # ============================================================
@@ -304,25 +304,6 @@ subaru_ssm2:
     - id: 0x18
       name: "Gaspedalstellung"
       unit_of_measurement: "%"
-
-# ============================================================
-#  1-WIRE AUTO-DISCOVERY (Prototype – auskommentiert)
-# ============================================================
-# external_components:
-#   - source: github://Chance-Konstruktion/esphome-wire-whisperer@main
-#     components: [onewire_auto]
-#
-# one_wire:
-#   - platform: gpio
-#     pin: GPIO7
-#     id: onewire_bus
-#
-# onewire_auto:
-#   one_wire_id: onewire_bus
-#   discovery_prefix: "subaru_1wire"
-#   strong_pullup: true
-#   update_interval: 60min
-#   scan_on_boot: true
 
 # ============================================================
 #  DEEP SLEEP & INTERVALLE
