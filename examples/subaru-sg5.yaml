@@ -83,12 +83,6 @@ wireguard:
   address: 172.31.0.3
   netmask: 255.255.255.0
   private_key: !secret wg_private_key_sg5
-  peer_endpoint: schanz.ipv64.net
-  peer_port: 51821
-  peer_public_key: /bM1ABBo/q1UfTy2rUQH7K7iUqmLTFLzgHxENKLBgRE=
-  peer_allowed_ips:
-    - 0.0.0.0/0
-  peer_persistent_keepalive: 25s
 
 # ============================================================
 #  ZEIT
