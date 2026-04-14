@@ -14,7 +14,7 @@ CONF_UART_ID = "uart"
 CONF_REQUEST_DELAY = "request_delay"
 CONF_RESPONSE_TIMEOUT = "response_timeout"
 CONF_MOTOR_RUNNING_SENSOR = "motor_running_sensor"
-CONF_PARAMETER_ID = "id"
+CONF_ADDRESS = "address"
 CONF_MODE = "mode"
 
 MODE_NORMAL = "normal"
@@ -26,14 +26,15 @@ SubaruSSM2Component = subaru_ssm2_ns.class_(
 )
 
 # Parameter schema = full sensor schema PLUS the SSM2 parameter address.
-# This is critical: sensor.new_sensor() needs a validated config dict that
-# already contains a generated CONF_ID, otherwise codegen crashes.
+# We use `address` (not `id`) on purpose: `sensor.sensor_schema()` already
+# reserves CONF_ID ("id") via cv.GenerateID() for the sensor's own declared
+# identifier, so a second field named `id` would collide and break codegen.
 PARAMETER_SCHEMA = sensor.sensor_schema(
     accuracy_decimals=2,
     state_class=STATE_CLASS_MEASUREMENT,
 ).extend(
     {
-        cv.Required(CONF_PARAMETER_ID): cv.hex_uint8_t,
+        cv.Required(CONF_ADDRESS): cv.hex_uint8_t,
     }
 )
 
@@ -77,4 +78,4 @@ async def to_code(config):
 
     for parameter_config in config[CONF_PARAMETERS]:
         sens = await sensor.new_sensor(parameter_config)
-        cg.add(var.add_parameter_sensor(int(parameter_config[CONF_PARAMETER_ID]), sens))
+        cg.add(var.add_parameter_sensor(int(parameter_config[CONF_ADDRESS]), sens))

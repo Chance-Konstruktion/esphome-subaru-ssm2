@@ -28,7 +28,7 @@ subaru_ssm2:
   request_delay: 50ms
   response_timeout: 200ms
   parameters:
-    - id: 0x08
+    - address: 0x08
       name: "Kühlmitteltemperatur"
 ```
 
