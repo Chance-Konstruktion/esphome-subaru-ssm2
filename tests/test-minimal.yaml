@@ -1,0 +1,46 @@
+# Minimal config used by CI to validate AND compile the component against the
+# checked-out sources (local external_components path, not GitHub@main).
+#
+# It intentionally defines NO binary_sensor platform: that way a regression in
+# AUTO_LOAD (missing "binary_sensor") would break the compile job, since
+# subaru_ssm2.h includes binary_sensor.h.
+esphome:
+  name: ssm2-ci
+
+esp32:
+  board: esp32-c3-devkitm-1
+  framework:
+    type: esp-idf
+
+logger:
+
+external_components:
+  - source:
+      type: local
+      path: ../components
+    components: [subaru_ssm2]
+
+uart:
+  - id: kline_uart
+    tx_pin: GPIO6
+    rx_pin: GPIO5
+    baud_rate: 4800
+    data_bits: 8
+    stop_bits: 1
+    parity: NONE
+
+subaru_ssm2:
+  id: subaru_ecu
+  uart: kline_uart
+  update_interval: 5s
+  request_delay: 50ms
+  response_timeout: 200ms
+  parameters:
+    - address: 0x08
+      name: "Coolant Temp"
+      unit_of_measurement: "°C"
+      device_class: temperature
+    - address: 0x0F  # 2-byte parameter -> exercises the multi-address request
+      name: "Engine Speed"
+      unit_of_measurement: "rpm"
+      accuracy_decimals: 0

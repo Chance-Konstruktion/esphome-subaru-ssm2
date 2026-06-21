@@ -84,16 +84,32 @@ void SubaruSSM2Component::send_request_(uint8_t parameter) {
     return;
   }
   const SSM2Parameter &cfg = it->second;
+  const uint8_t n = cfg.data_length;
 
-  // SSM2 single-address read request: header(0x80), dest(0x10 ECU),
-  // src(0xF0 tester), data length, command(0xA8), pad(0x00),
-  // address bytes (3-byte address; we only use the low byte here),
-  // checksum.
-  std::vector<uint8_t> request = {
-      0x80, 0x10, 0xF0, 0x05, 0xA8, 0x00, 0x00, 0x00, parameter,
-  };
+  // SSM2 "read addresses" (0xA8) returns exactly ONE byte per requested
+  // 3-byte address, so an N-byte value needs N consecutive addresses in a
+  // single request. Convention: the table address is the least-significant
+  // (last) byte, so we ask for (addr-N+1 .. addr) ascending, which makes the
+  // ECU return the bytes in big-endian (MSB first) order.
+  //
+  // Frame: header(0x80) dest(0x10 ECU) src(0xF0 tester) len cmd(0xA8)
+  //        responseType(0x00 = single) [00 00 addr]*N checksum
+  // len counts cmd + responseType + N*3 address bytes.
+  //
+  // NOTE: the address span/order is still an assumption and must be verified
+  // against a real ECU capture (ROADMAP Phase 3/4).
+  std::vector<uint8_t> request = {0x80, 0x10, 0xF0};
+  request.push_back(static_cast<uint8_t>(2 + n * 3));  // data length
+  request.push_back(0xA8);                             // command: read addresses
+  request.push_back(0x00);                             // response type: single
+  for (uint8_t i = 0; i < n; i++) {
+    request.push_back(0x00);
+    request.push_back(0x00);
+    request.push_back(static_cast<uint8_t>(parameter - (n - 1) + i));
+  }
   request.push_back(this->checksum_(request));
-  ESP_LOGV(TAG, "TX request for 0x%02X: %s", parameter, this->bytes_to_hex_(request).c_str());
+  ESP_LOGV(TAG, "TX request for 0x%02X (%u byte): %s", parameter, n,
+           this->bytes_to_hex_(request).c_str());
 
   // Discard any stale bytes before issuing the new request.
   while (this->available())
@@ -101,94 +117,80 @@ void SubaruSSM2Component::send_request_(uint8_t parameter) {
 
   this->write_array(request);
   this->current_parameter_ = parameter;
-  // Header(5) + echo of payload bytes is implementation-dependent on K-Line
-  // sniffers. We accept any length >= header(5) + 1 status + data_length + 1 checksum.
-  this->expected_response_len_ = static_cast<size_t>(7 + cfg.data_length);
   this->rx_buffer_.clear();
-  this->rx_buffer_.reserve(this->expected_response_len_);
   this->request_sent_at_ = millis();
   this->state_ = STATE_WAIT_BEFORE_READ;
-
-  ESP_LOGV(TAG, "Sent SSM2 request for 0x%02X (expecting %u bytes)", parameter,
-           (unsigned) this->expected_response_len_);
 }
 
-void SubaruSSM2Component::process_response_() {
+SubaruSSM2Component::ParseResult SubaruSSM2Component::try_parse_response_() {
   auto it = KNOWN_PARAMETERS.find(this->current_parameter_);
-  if (it == KNOWN_PARAMETERS.end()) {
-    this->state_ = STATE_IDLE;
-    return;
-  }
+  if (it == KNOWN_PARAMETERS.end())
+    return PARSE_BAD;
   const SSM2Parameter &cfg = it->second;
 
-  // Find ECU response header: 0x80 0xF0 0x10 (ECU -> tester).
+  // Locate the ECU response header (0x80 0xF0 0x10). Scanning forward over the
+  // leading bytes transparently skips the request echo we receive back on the
+  // half-duplex K-line: that echo starts 0x80 0x10 0xF0 and so never matches.
   size_t hdr = 0;
   bool found = false;
-  for (; hdr + 5 <= this->rx_buffer_.size(); hdr++) {
+  for (; hdr + 4 <= this->rx_buffer_.size(); hdr++) {
     if (this->rx_buffer_[hdr] == 0x80 && this->rx_buffer_[hdr + 1] == 0xF0 &&
         this->rx_buffer_[hdr + 2] == 0x10) {
       found = true;
       break;
     }
   }
-  if (!found) {
-    ESP_LOGW(TAG, "No ECU header found for 0x%02X", this->current_parameter_);
-    this->state_ = STATE_IDLE;
-    return;
-  }
+  if (!found)
+    return PARSE_INCOMPLETE;  // ECU header not seen yet
 
-  const uint8_t payload_len = this->rx_buffer_[hdr + 3];
-  const size_t total_needed = hdr + 4 + payload_len + 1;  // header + len + payload + checksum
-  if (this->rx_buffer_.size() < total_needed) {
-    ESP_LOGW(TAG, "Truncated response for 0x%02X (got %u, need %u)", this->current_parameter_,
-             (unsigned) this->rx_buffer_.size(), (unsigned) total_needed);
-    this->state_ = STATE_IDLE;
-    return;
-  }
+  const uint8_t payload_len = this->rx_buffer_[hdr + 3];   // status + data bytes
+  const size_t total_needed = hdr + 4 + payload_len + 1;   // + checksum
+  if (this->rx_buffer_.size() < total_needed)
+    return PARSE_INCOMPLETE;  // frame still arriving
 
   std::vector<uint8_t> frame(this->rx_buffer_.begin() + hdr,
                              this->rx_buffer_.begin() + hdr + 4 + payload_len);
   const uint8_t expected_csum = this->rx_buffer_[hdr + 4 + payload_len];
   if (this->checksum_(frame) != expected_csum) {
     ESP_LOGW(TAG, "Checksum mismatch for 0x%02X (calc 0x%02X != got 0x%02X) frame: %s",
-             this->current_parameter_, this->checksum_(frame), expected_csum, this->bytes_to_hex_(frame).c_str());
-    this->state_ = STATE_IDLE;
-    return;
+             this->current_parameter_, this->checksum_(frame), expected_csum,
+             this->bytes_to_hex_(frame).c_str());
+    return PARSE_BAD;
   }
 
   // Payload byte 0 is the status (0xE8 = response to A8). Data starts at +1.
   if (payload_len < 1 + cfg.data_length) {
-    ESP_LOGW(TAG, "Payload too short for 0x%02X", this->current_parameter_);
-    this->state_ = STATE_IDLE;
-    return;
+    ESP_LOGW(TAG, "Payload too short for 0x%02X (len %u, need %u)", this->current_parameter_,
+             (unsigned) payload_len, (unsigned) (1 + cfg.data_length));
+    return PARSE_BAD;
   }
   const uint8_t status = this->rx_buffer_[hdr + 4];
   if (status != 0xE8) {
     ESP_LOGW(TAG, "Unexpected response status 0x%02X for 0x%02X; raw frame: %s", status,
              this->current_parameter_, this->bytes_to_hex_(frame).c_str());
-    this->state_ = STATE_IDLE;
-    return;
+    return PARSE_BAD;
   }
 
   int32_t raw = 0;
-  for (uint8_t i = 0; i < cfg.data_length; i++) {
-    raw = (raw << 8) | this->rx_buffer_[hdr + 4 + 1 + i];
-  }
-  if (cfg.is_signed) {
+  for (uint8_t i = 0; i < cfg.data_length; i++)
+    raw = (raw << 8) | this->rx_buffer_[hdr + 5 + i];  // data starts after status
+
+  // Sign-extend if needed. Guarded to <4 bytes so the 1u<<bits shift below
+  // can never hit 32-bit undefined behaviour.
+  if (cfg.is_signed && cfg.data_length > 0 && cfg.data_length < 4) {
     const uint8_t bits = cfg.data_length * 8;
-    const int32_t sign_bit = static_cast<int32_t>(1UL << (bits - 1));
-    if (raw & sign_bit)
-      raw -= static_cast<int32_t>(1UL << bits);
+    const uint32_t sign_bit = static_cast<uint32_t>(1) << (bits - 1);
+    if (static_cast<uint32_t>(raw) & sign_bit)
+      raw -= static_cast<int32_t>(static_cast<uint32_t>(1) << bits);
   }
 
-  float value = static_cast<float>(raw) * cfg.scale + cfg.offset;
+  const float value = static_cast<float>(raw) * cfg.scale + cfg.offset;
   auto sensor_it = this->parameter_sensors_.find(this->current_parameter_);
-  if (sensor_it != this->parameter_sensors_.end()) {
+  if (sensor_it != this->parameter_sensors_.end())
     sensor_it->second->publish_state(value);
-  }
-  ESP_LOGD(TAG, "Parameter 0x%02X -> %.3f %s", this->current_parameter_, value,
-           cfg.unit != nullptr ? cfg.unit : "");
-  this->state_ = STATE_IDLE;
+  ESP_LOGD(TAG, "%s (0x%02X) -> %.3f %s", cfg.name != nullptr ? cfg.name : "?",
+           this->current_parameter_, value, cfg.unit != nullptr ? cfg.unit : "");
+  return PARSE_OK;
 }
 
 void SubaruSSM2Component::loop() {
@@ -220,15 +222,20 @@ void SubaruSSM2Component::loop() {
       }
       break;
 
-    case STATE_READING:
-      if (this->rx_buffer_.size() >= this->expected_response_len_) {
-        this->process_response_();
+    case STATE_READING: {
+      // Try to parse a complete frame out of whatever has arrived. Driven by
+      // the frame's own length field instead of a fixed byte count, so a
+      // leading request echo or trailing bytes no longer desync the reader.
+      const ParseResult res = this->try_parse_response_();
+      if (res != PARSE_INCOMPLETE) {
+        this->state_ = STATE_IDLE;  // decoded, or hard error – move to next
       } else if (millis() - this->request_sent_at_ > this->response_timeout_ms_) {
         ESP_LOGW(TAG, "Timeout reading parameter 0x%02X (got %u bytes)", this->current_parameter_,
                  (unsigned) this->rx_buffer_.size());
         this->state_ = STATE_IDLE;
       }
       break;
+    }
   }
 }
 

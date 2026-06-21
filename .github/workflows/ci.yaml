@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  validate:
+    name: Validate config + codegen
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install ESPHome
+        run: pip install esphome
+      # Runs the component's Python codegen (to_code), so it catches schema /
+      # codegen regressions without a full toolchain download.
+      - name: esphome config
+        run: esphome config tests/test-minimal.yaml
+
+  compile:
+    name: Compile (ESP32-C3, esp-idf)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Cache PlatformIO + pip
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio
+            ~/.cache/pip
+          key: pio-${{ runner.os }}-${{ hashFiles('tests/test-minimal.yaml') }}
+          restore-keys: pio-${{ runner.os }}-
+      - name: Install ESPHome
+        run: pip install esphome
+      # The real C++ build. This is what catches the AUTO_LOAD / include bugs
+      # that `esphome config` alone cannot see.
+      - name: esphome compile
+        run: esphome compile tests/test-minimal.yaml

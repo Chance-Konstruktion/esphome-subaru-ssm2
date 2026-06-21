@@ -1,0 +1,63 @@
+# ============================================================
+#  Minimal Subaru SSM2 example – copy and adapt.
+#  Only what you need to read a few ECU parameters over K-Line.
+#  For a full real-world device config see subaru-sg5.yaml.
+# ============================================================
+
+substitutions:
+  name: subaru-ssm2
+  friendly_name: Subaru SSM2
+
+esphome:
+  name: ${name}
+  friendly_name: ${friendly_name}
+
+esp32:
+  board: esp32-c3-devkitm-1
+  framework:
+    type: esp-idf
+
+logger:
+
+wifi:
+  ssid: !secret wifi_ssid
+  password: !secret wifi_password
+
+api:
+
+ota:
+  - platform: esphome
+
+external_components:
+  - source: github://Chance-Konstruktion/esphome-subaru-ssm2@main
+    components: [subaru_ssm2]
+
+uart:
+  - id: kline_uart
+    tx_pin: GPIO6
+    rx_pin: GPIO5
+    baud_rate: 4800
+    data_bits: 8
+    stop_bits: 1
+    parity: NONE
+
+subaru_ssm2:
+  id: subaru_ecu
+  uart: kline_uart
+  mode: normal          # "sniff" = listen-only, sends no requests
+  update_interval: 5s
+  request_delay: 50ms
+  response_timeout: 200ms
+  parameters:
+    - address: 0x08
+      name: "Kühlmitteltemperatur"
+      unit_of_measurement: "°C"
+      device_class: temperature
+    - address: 0x0F
+      name: "Motordrehzahl"
+      unit_of_measurement: "rpm"
+      accuracy_decimals: 0
+    - address: 0x15
+      name: "Batteriespannung ECU"
+      unit_of_measurement: "V"
+      device_class: voltage

@@ -7,7 +7,10 @@ from esphome.const import (
     STATE_CLASS_MEASUREMENT,
 )
 
-AUTO_LOAD = ["sensor"]
+# binary_sensor must be auto-loaded because subaru_ssm2.h includes
+# binary_sensor.h. Without it, any config that does not otherwise define a
+# binary_sensor platform (e.g. the README minimal example) fails to compile.
+AUTO_LOAD = ["sensor", "binary_sensor"]
 DEPENDENCIES = ["uart"]
 
 CONF_UART_ID = "uart"

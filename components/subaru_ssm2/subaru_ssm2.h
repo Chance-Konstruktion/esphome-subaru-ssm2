@@ -35,10 +35,16 @@ class SubaruSSM2Component : public PollingComponent, public uart::UARTDevice {
     STATE_READING,
   };
 
+  enum ParseResult {
+    PARSE_INCOMPLETE,  // no complete frame in the buffer yet – keep waiting
+    PARSE_OK,          // frame decoded and published
+    PARSE_BAD,         // frame found but invalid (checksum/status/length)
+  };
+
   uint8_t checksum_(const std::vector<uint8_t> &frame) const;
   bool should_poll_() const;
   void send_request_(uint8_t parameter);
-  void process_response_();
+  ParseResult try_parse_response_();
   void flush_sniff_buffer_(bool force = false);
   std::string bytes_to_hex_(const std::vector<uint8_t> &bytes) const;
 
@@ -55,7 +61,6 @@ class SubaruSSM2Component : public PollingComponent, public uart::UARTDevice {
   std::vector<uint8_t> pending_params_;
   size_t pending_index_{0};
   uint8_t current_parameter_{0};
-  size_t expected_response_len_{0};
   uint32_t request_sent_at_{0};
   uint32_t sniff_last_rx_at_{0};
   std::vector<uint8_t> sniff_buffer_;
