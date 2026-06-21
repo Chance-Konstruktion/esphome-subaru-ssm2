@@ -122,10 +122,15 @@ ohne Risiko.
 - **Kein Init-Handshake** im Code. SSM2 sollte ohne Init funktionieren
   (anders als KWP2000 5-Baud-Init), aber falls die ECU nicht antwortet
   ist das der erste Verdacht.
-- **K-Line ist halbduplex**. Unser Code disabled aktuell nicht den
-  TX-Treiber während er auf Antwort wartet. Mit L9637D macht der Chip
-  das automatisch (Echo-Suppression), ohne externen Transceiver würden
-  wir unsere eigenen Bytes empfangen.
+- **K-Line ist halbduplex (Single-Wire)**. Wir empfangen unser eigenes TX
+  immer wieder auf RX — der L9637D macht **keine** Echo-Suppression (er ist
+  nur ein Transceiver, diese frühere Annahme war falsch). Der Parser
+  (`try_parse_response_()`) sucht deshalb nach dem ECU-Header `80 F0 10` und
+  überspringt das Request-Echo (`80 10 F0 …`) automatisch.
+- **Mehrbyte-Parameter** (RPM, MAP, MAF, Boost …) werden jetzt über
+  mehrere 3-Byte-Adressen in *einem* `0xA8`-Request gelesen (ein Byte pro
+  Adresse). Adress-Span/-Reihenfolge sind noch eine Annahme und müssen am
+  echten Steuergerät verifiziert werden.
 
 ---
 
