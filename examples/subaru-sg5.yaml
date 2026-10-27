@@ -207,6 +207,10 @@ binary_sensor:
     name: "Zusatzbatterie Alarm"
     id: low_battery_alarm
     device_class: battery
+    lambda: |-
+      const float v = id(battery_voltage).state;
+      if (isnan(v)) return {};
+      return v < 12.2;
 
   - platform: template
     name: "Motor läuft"
