@@ -16,9 +16,22 @@ jobs:
           python-version: "3.11"
       - name: Install ESPHome
         run: pip install esphome
+      # The full SG5 example uses local secrets. CI supplies placeholders so
+      # its real sleep policy and dashboard-facing entities are schema-checked.
+      - name: Create placeholder secrets
+        run: |
+          cat > secrets.yaml <<'EOF'
+          wifi_ssid: "ci-ssid"
+          wifi_password: "ci-password"
+          api_key_sg5: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
+          ota_password_sg5: "ci-ota-password"
+          wg_private_key_sg5: "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA="
+          EOF
+      - name: Validate full SG5 example
+        run: esphome config examples/subaru-sg5.yaml
       # Runs the component's Python codegen (to_code), so it catches schema /
       # codegen regressions without a full toolchain download.
-      - name: esphome config
+      - name: Validate minimal component config
         run: esphome config tests/test-minimal.yaml
 
   compile:
