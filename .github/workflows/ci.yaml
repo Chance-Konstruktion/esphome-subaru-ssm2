@@ -26,6 +26,8 @@ jobs:
           api_key_sg5: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
           ota_password_sg5: "ci-ota-password"
           wg_private_key_sg5: "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA="
+          wg_peer_endpoint_sg5: "vpn.example.test"
+          wg_peer_public_key_sg5: "ci-public-key"
           EOF
       - name: Validate full SG5 example
         run: esphome config examples/subaru-sg5.yaml
