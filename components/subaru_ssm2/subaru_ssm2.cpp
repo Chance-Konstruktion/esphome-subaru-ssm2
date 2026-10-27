@@ -58,11 +58,11 @@ std::string SubaruSSM2Component::bytes_to_hex_(const std::vector<uint8_t> &bytes
   return out;
 }
 
-void SubaruSSM2Component::flush_sniff_buffer_(bool force) {
+void SubaruSSM2Component::flush_sniff_buffer_() {
   if (this->sniff_buffer_.empty())
     return;
 
-  if (!force && (millis() - this->sniff_last_rx_at_ < this->sniff_flush_ms_))
+  if (millis() - this->sniff_last_rx_at_ < this->sniff_flush_ms_)
     return;
 
   ESP_LOGD(TAG, "Sniff RX (%u bytes): %s", (unsigned) this->sniff_buffer_.size(),
@@ -203,9 +203,18 @@ void SubaruSSM2Component::loop() {
     return;
   }
 
-  // Read whatever bytes have arrived; never block.
-  while (this->available()) {
-    this->rx_buffer_.push_back(this->read());
+  // Only buffer RX bytes while a request is in flight. Unsolicited bytes
+  // received while idle are discarded; otherwise rx_buffer_ can grow without
+  // bound between polling cycles when another device or electrical noise puts
+  // bytes on the bus.
+  if (this->state_ == STATE_WAIT_BEFORE_READ || this->state_ == STATE_READING) {
+    while (this->available()) {
+      this->rx_buffer_.push_back(this->read());
+    }
+  } else {
+    while (this->available())
+      this->read();
+    this->rx_buffer_.clear();
   }
 
   switch (this->state_) {
