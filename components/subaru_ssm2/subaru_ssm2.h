@@ -45,7 +45,7 @@ class SubaruSSM2Component : public PollingComponent, public uart::UARTDevice {
   bool should_poll_() const;
   void send_request_(uint8_t parameter);
   ParseResult try_parse_response_();
-  void flush_sniff_buffer_(bool force = false);
+  void flush_sniff_buffer_();
   std::string bytes_to_hex_(const std::vector<uint8_t> &bytes) const;
 
   std::map<uint8_t, sensor::Sensor *> parameter_sensors_;
