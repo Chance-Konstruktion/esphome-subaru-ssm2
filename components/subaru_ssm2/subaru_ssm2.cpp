@@ -207,18 +207,9 @@ void SubaruSSM2Component::loop() {
     return;
   }
 
-  // Only buffer RX bytes while a request is in flight. Unsolicited bytes
-  // received while idle are discarded; otherwise rx_buffer_ can grow without
-  // bound between polling cycles when another device or electrical noise puts
-  // bytes on the bus.
-  if (this->state_ == STATE_WAIT_BEFORE_READ || this->state_ == STATE_READING) {
-    while (this->available()) {
-      this->rx_buffer_.push_back(this->read());
-    }
-  } else {
-    while (this->available())
-      this->read();
-    this->rx_buffer_.clear();
+  // Read whatever bytes have arrived; never block.
+  while (this->available()) {
+    this->rx_buffer_.push_back(this->read());
   }
 
   switch (this->state_) {
