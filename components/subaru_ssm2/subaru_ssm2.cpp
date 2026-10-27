@@ -203,9 +203,13 @@ void SubaruSSM2Component::loop() {
     return;
   }
 
-  // Read whatever bytes have arrived; never block.
+  // Read whatever bytes have arrived; never block. Only retain bytes while
+  // a request is in flight; otherwise unsolicited RX traffic would accumulate
+  // in rx_buffer_ indefinitely between polling cycles.
   while (this->available()) {
-    this->rx_buffer_.push_back(this->read());
+    const uint8_t byte = this->read();
+    if (this->state_ != STATE_IDLE)
+      this->rx_buffer_.push_back(byte);
   }
 
   switch (this->state_) {
