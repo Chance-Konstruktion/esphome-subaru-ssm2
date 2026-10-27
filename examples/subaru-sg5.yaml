@@ -103,6 +103,10 @@ globals:
   - id: sleep_minutes
     type: int
     initial_value: '15'
+  # Updated only when INA3221 publishes a finite battery sample.
+  - id: last_battery_sample_ms
+    type: uint32_t
+    initial_value: '0'
 
 # ============================================================
 #  I2C & UART
@@ -158,6 +162,9 @@ sensor:
             - lambda: |-
                 float v = x;
                 if (isnan(v)) return;
+                // Do not let the sleep gate rely on an old finite reading if
+                // the latest INA3221 update fails to publish a new sample.
+                id(last_battery_sample_ms) = millis();
                 if      (v > 13.2)  id(sleep_minutes) = 0;
                 else if (v >= 12.6) id(sleep_minutes) = 5;
                 else if (v >= 12.4) id(sleep_minutes) = 15;
@@ -207,14 +214,21 @@ binary_sensor:
     name: "Zusatzbatterie Alarm"
     id: low_battery_alarm
     device_class: battery
+    lambda: |-
+      const float v = id(battery_voltage).state;
+      if (isnan(v)) return {};
+      // Match the lowest-voltage band in the sleep policy.
+      return v < 12.2;
 
   - platform: template
     name: "Motor läuft"
     id: motor_running
     device_class: running
     lambda: |-
-      if (isnan(id(battery_voltage).state)) return false;
-      return id(battery_voltage).state > 13.2;
+      const float v = id(battery_voltage).state;
+      // Keep the last known run state while the voltage sensor is invalid.
+      if (isnan(v)) return {};
+      return v > 13.2;
 
   - platform: homeassistant
     id: ha_wartungsmodus
@@ -330,8 +344,10 @@ interval:
                   lambda: |-
                     if (!id(boot_complete)) return false;
                     float v = id(battery_voltage).state;
-                    // Unknown voltage is not safe evidence for entering deep sleep.
+                    // Unknown or stale voltage is not safe evidence for sleep.
                     if (isnan(v)) return false;
+                    const uint32_t last_sample_ms = id(last_battery_sample_ms);
+                    if (last_sample_ms == 0 || millis() - last_sample_ms > 2000UL) return false;
                     if (v > 13.2) return false;
                     if (id(ha_wartungsmodus).state) return false;
                     if (id(sleep_minutes) <= 0) return false;
