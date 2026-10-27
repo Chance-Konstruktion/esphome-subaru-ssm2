@@ -83,6 +83,8 @@ wireguard:
   address: 172.31.0.3
   netmask: 255.255.255.0
   private_key: !secret wg_private_key_sg5
+  peer_endpoint: !secret wg_peer_endpoint_sg5
+  peer_public_key: !secret wg_peer_public_key_sg5
 
 # ============================================================
 #  ZEIT
