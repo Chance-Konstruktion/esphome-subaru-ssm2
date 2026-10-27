@@ -330,7 +330,9 @@ interval:
                   lambda: |-
                     if (!id(boot_complete)) return false;
                     float v = id(battery_voltage).state;
-                    if (!isnan(v) && v > 13.2) return false;
+                    // Unknown voltage is not safe evidence for entering deep sleep.
+                    if (isnan(v)) return false;
+                    if (v > 13.2) return false;
                     if (id(ha_wartungsmodus).state) return false;
                     if (id(sleep_minutes) <= 0) return false;
                     return true;
