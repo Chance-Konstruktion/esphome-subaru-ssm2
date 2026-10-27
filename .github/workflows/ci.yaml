@@ -27,7 +27,7 @@ jobs:
           ota_password_sg5: "ci-ota-password"
           wg_private_key_sg5: "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA="
           wg_peer_endpoint_sg5: "vpn.example.test"
-          wg_peer_public_key_sg5: "ci-public-key"
+          wg_peer_public_key_sg5: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="
           EOF
       - name: Copy placeholder secrets beside SG5 config
         run: cp secrets.yaml examples/
