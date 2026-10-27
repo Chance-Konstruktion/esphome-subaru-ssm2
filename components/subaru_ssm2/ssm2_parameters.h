@@ -8,7 +8,7 @@ namespace subaru_ssm2 {
 
 // Decoding metadata for one SSM2 parameter. Only the fields used by the C++
 // side live here:
-//   - address:     low byte of the (currently single-page) SSM2 address.
+//   - map key:     low byte of the (currently single-page) SSM2 address.
 //   - name/unit:   used for human-readable debug logs only.
 //   - scale/offset/data_length/is_signed: raw -> engineering-unit conversion.
 // The sensor's presentation (name shown in HA, device_class, state_class,
