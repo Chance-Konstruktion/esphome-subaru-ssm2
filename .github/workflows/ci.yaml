@@ -29,6 +29,8 @@ jobs:
           wg_peer_endpoint_sg5: "vpn.example.test"
           wg_peer_public_key_sg5: "ci-public-key"
           EOF
+      - name: Copy placeholder secrets beside SG5 config
+        run: cp secrets.yaml examples/
       - name: Validate full SG5 example
         run: esphome config examples/subaru-sg5.yaml
       # Runs the component's Python codegen (to_code), so it catches schema /
