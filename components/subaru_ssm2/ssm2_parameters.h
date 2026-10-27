@@ -2,15 +2,13 @@
 
 #include <cstdint>
 #include <map>
-#include <string>
 
 namespace esphome {
 namespace subaru_ssm2 {
 
 // Decoding metadata for one SSM2 parameter. Only the fields used by the C++
 // side live here:
-//   - address:     low byte of the (currently single-page) SSM2 address.
-//   - name/unit:   used for human-readable debug logs only.
+// //   - name/unit:   used for human-readable debug logs only.
 //   - scale/offset/data_length/is_signed: raw -> engineering-unit conversion.
 // The sensor's presentation (name shown in HA, device_class, state_class,
 // accuracy_decimals) comes entirely from the YAML, so it is NOT duplicated
@@ -20,7 +18,6 @@ namespace subaru_ssm2 {
 // must be checked against RomRaider/a real ECU capture before release
 // (see ROADMAP Phase 4).
 struct SSM2Parameter {
-  uint8_t address;
   const char *name;
   const char *unit;
   float scale;
@@ -30,24 +27,24 @@ struct SSM2Parameter {
 };
 
 static const std::map<uint8_t, SSM2Parameter> KNOWN_PARAMETERS = {
-    {0x08, {0x08, "Kühlmitteltemperatur", "°C", 1.0f, -40.0f, 1, false}},
-    {0x0A, {0x0A, "Öltemperatur", "°C", 1.0f, -40.0f, 1, false}},
-    {0x0F, {0x0F, "Motordrehzahl", "rpm", 0.25f, 0.0f, 2, false}},
-    {0x11, {0x11, "Saugrohrdruck absolut", "bar", 0.001f, 0.0f, 2, false}},
-    {0x13, {0x13, "Zündzeitpunkt", "°", 0.5f, -64.0f, 1, true}},
-    {0x15, {0x15, "Batteriespannung ECU", "V", 0.1f, 0.0f, 1, false}},
-    {0x16, {0x16, "Luftdurchsatz", "g/s", 0.01f, 0.0f, 2, false}},
-    {0x17, {0x17, "Drosselklappenstellung", "%", 0.392f, 0.0f, 1, false}},
-    {0x18, {0x18, "Gaspedalstellung", "%", 0.392f, 0.0f, 1, false}},
-    {0x1E, {0x1E, "Ansauglufttemperatur", "°C", 1.0f, -40.0f, 1, false}},
-    {0x24, {0x24, "Ladedruck relativ", "bar", 0.001f, -1.0f, 2, true}},
-    {0x25, {0x25, "Boost Target", "bar", 0.001f, 0.0f, 2, false}},
-    {0x26, {0x26, "Wastegate Duty Cycle", "%", 0.392f, 0.0f, 1, false}},
-    {0x2A, {0x2A, "Tankfüllstand", "%", 0.392f, 0.0f, 1, false}},
-    {0x2B, {0x2B, "Momentanverbrauch", "L/100km", 0.05f, 0.0f, 1, false}},
-    {0x2C, {0x2C, "Durchschnittsverbrauch", "L/100km", 0.05f, 0.0f, 1, false}},
-    {0x3C, {0x3C, "Knock Correction", "°", 0.5f, -16.0f, 1, true}},
-    {0x3D, {0x3D, "IAM", nullptr, 0.0625f, 0.0f, 1, false}},
+    {0x08, {"Kühlmitteltemperatur", "°C", 1.0f, -40.0f, 1, false}},
+    {0x0A, {"Öltemperatur", "°C", 1.0f, -40.0f, 1, false}},
+    {0x0F, {"Motordrehzahl", "rpm", 0.25f, 0.0f, 2, false}},
+    {0x11, {"Saugrohrdruck absolut", "bar", 0.001f, 0.0f, 2, false}},
+    {0x13, {"Zündzeitpunkt", "°", 0.5f, -64.0f, 1, true}},
+    {0x15, {"Batteriespannung ECU", "V", 0.1f, 0.0f, 1, false}},
+    {0x16, {"Luftdurchsatz", "g/s", 0.01f, 0.0f, 2, false}},
+    {0x17, {"Drosselklappenstellung", "%", 0.392f, 0.0f, 1, false}},
+    {0x18, {"Gaspedalstellung", "%", 0.392f, 0.0f, 1, false}},
+    {0x1E, {"Ansauglufttemperatur", "°C", 1.0f, -40.0f, 1, false}},
+    {0x24, {"Ladedruck relativ", "bar", 0.001f, -1.0f, 2, true}},
+    {0x25, {"Boost Target", "bar", 0.001f, 0.0f, 2, false}},
+    {0x26, {"Wastegate Duty Cycle", "%", 0.392f, 0.0f, 1, false}},
+    {0x2A, {"Tankfüllstand", "%", 0.392f, 0.0f, 1, false}},
+    {0x2B, {"Momentanverbrauch", "L/100km", 0.05f, 0.0f, 1, false}},
+    {0x2C, {"Durchschnittsverbrauch", "L/100km", 0.05f, 0.0f, 1, false}},
+    {0x3C, {"Knock Correction", "°", 0.5f, -16.0f, 1, true}},
+    {0x3D, {"IAM", nullptr, 0.0625f, 0.0f, 1, false}},
 };
 
 }  // namespace subaru_ssm2
