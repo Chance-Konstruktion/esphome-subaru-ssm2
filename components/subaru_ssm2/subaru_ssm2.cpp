@@ -58,11 +58,11 @@ std::string SubaruSSM2Component::bytes_to_hex_(const std::vector<uint8_t> &bytes
   return out;
 }
 
-void SubaruSSM2Component::flush_sniff_buffer_() {
+void SubaruSSM2Component::flush_sniff_buffer_(bool force) {
   if (this->sniff_buffer_.empty())
     return;
 
-  if (millis() - this->sniff_last_rx_at_ < this->sniff_flush_ms_)
+  if (!force && (millis() - this->sniff_last_rx_at_ < this->sniff_flush_ms_))
     return;
 
   ESP_LOGD(TAG, "Sniff RX (%u bytes): %s", (unsigned) this->sniff_buffer_.size(),
