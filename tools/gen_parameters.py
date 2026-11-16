@@ -7,6 +7,8 @@ Usage:
   python tools/gen_parameters.py logger.xml --validate-only
   python tools/gen_parameters.py logger.xml --ecu 2F12785606
   python tools/gen_parameters.py logger.xml --list-ecus
+  python tools/gen_parameters.py logger.xml --graph mermaid --graph-out depends.md
+  python tools/gen_parameters.py logger.xml --graph dot --graph-out depends.dot --graph-only
 """
 from __future__ import annotations
 
@@ -23,6 +25,7 @@ if str(_TOOLS_DIR) not in sys.path:
 from ssm2_xml_generate import generate_header, parse_logger_xml
 from ssm2_xml_common import is_useful
 from ssm2_xml_validate import print_validation_report, validate_logger_xml
+from ssm2_xml_graph import export_graph
 
 
 def main() -> int:
@@ -44,6 +47,21 @@ def main() -> int:
     ap.add_argument("--validate-only", action="store_true", help="Nur validieren")
     ap.add_argument("--strict", action="store_true", help="Strengere Validierung")
     ap.add_argument("--skip-validate", action="store_true", help="Validierung überspringen")
+    ap.add_argument(
+        "--graph",
+        choices=("mermaid", "dot", "ascii"),
+        help="Depends-Graph exportieren (mermaid|dot|ascii)",
+    )
+    ap.add_argument(
+        "--graph-out",
+        type=Path,
+        help="Zieldatei für --graph (default: stdout)",
+    )
+    ap.add_argument(
+        "--graph-only",
+        action="store_true",
+        help="Nur Graph erzeugen, kein Header / keine Validierungspflicht",
+    )
     args = ap.parse_args()
 
     if not args.xml.exists():
@@ -61,10 +79,24 @@ def main() -> int:
                 print(f"  {eid}")
         return 0
 
+    if args.graph and args.graph_only:
+        text = export_graph(args.xml, fmt=args.graph, out=args.graph_out)
+        if args.graph_out:
+            print(f"Graph geschrieben → {args.graph_out} ({args.graph})", file=sys.stderr)
+        else:
+            sys.stdout.write(text)
+        return 0
+
     if args.validate_only or not args.skip_validate:
         issues = validate_logger_xml(args.xml, strict=args.strict)
         rc = print_validation_report(issues)
         if args.validate_only:
+            if args.graph:
+                text = export_graph(args.xml, fmt=args.graph, out=args.graph_out)
+                if args.graph_out:
+                    print(f"Graph geschrieben → {args.graph_out} ({args.graph})", file=sys.stderr)
+                else:
+                    sys.stdout.write(text)
             return rc
         if rc != 0:
             print(
@@ -73,6 +105,15 @@ def main() -> int:
                 file=sys.stderr,
             )
             return rc
+
+    if args.graph:
+        text = export_graph(args.xml, fmt=args.graph, out=args.graph_out)
+        if args.graph_out:
+            print(f"Graph geschrieben → {args.graph_out} ({args.graph})", file=sys.stderr)
+        else:
+            # avoid mixing graph with parameter listing on stdout when generating header
+            if args.graph_only or args.validate_only:
+                sys.stdout.write(text)
 
     params = parse_logger_xml(
         args.xml,
