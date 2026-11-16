@@ -18,6 +18,89 @@ from ssm2_xml_common import (
 )
 
 
+def find_dependency_cycles(graph: dict[str, set[str]]) -> list[list[str]]:
+    """
+    Find unique elementary cycles in a directed graph (derived→derived).
+
+    Optimizations vs. naive recursive DFS:
+    - adjacency reduced to nodes present in ``graph`` (call-site)
+    - iterative DFS → no recursion depth limit on large logger.xml
+    - stack position map for O(1) cycle slice extraction
+    - canonical cycle signatures to avoid reporting the same cycle
+      multiple times from different entry points
+    - self-loops ignored (handled separately as self-refs)
+    """
+    if not graph:
+        return []
+
+    # Only keep edges that stay inside the derived graph; drop self-loops.
+    adj: dict[str, list[str]] = {}
+    for node, deps in graph.items():
+        nbrs = [d for d in deps if d in graph and d != node]
+        adj[node] = nbrs
+
+    WHITE, GRAY, BLACK = 0, 1, 2
+    color: dict[str, int] = {n: WHITE for n in adj}
+    # Explicit stack frames: (node, next_neighbor_index)
+    # path holds the current DFS path of nodes
+    path: list[str] = []
+    path_index: dict[str, int] = {}
+    seen_cycles: set[tuple[str, ...]] = set()
+    cycles: list[list[str]] = []
+
+    def canonical(cycle_nodes: list[str]) -> tuple[str, ...]:
+        """Rotate so the lexicographically smallest id is first; drop closing dup."""
+        # cycle_nodes is [a, b, c, a] (closed)
+        body = cycle_nodes[:-1]
+        if not body:
+            return tuple(cycle_nodes)
+        start = min(range(len(body)), key=lambda i: body[i])
+        rotated = body[start:] + body[:start]
+        return tuple(rotated)
+
+    def record_cycle(back_to: str) -> None:
+        i = path_index.get(back_to)
+        if i is None:
+            return
+        closed = path[i:] + [back_to]
+        key = canonical(closed)
+        if key in seen_cycles:
+            return
+        seen_cycles.add(key)
+        cycles.append(closed)
+
+    for start in adj:
+        if color[start] != WHITE:
+            continue
+        # Seed iterative DFS
+        stack: list[tuple[str, int]] = [(start, 0)]
+        color[start] = GRAY
+        path.append(start)
+        path_index[start] = 0
+
+        while stack:
+            node, ni = stack[-1]
+            neighbors = adj[node]
+            if ni < len(neighbors):
+                stack[-1] = (node, ni + 1)
+                nxt = neighbors[ni]
+                c = color.get(nxt, BLACK)
+                if c == GRAY:
+                    record_cycle(nxt)
+                elif c == WHITE:
+                    color[nxt] = GRAY
+                    path_index[nxt] = len(path)
+                    path.append(nxt)
+                    stack.append((nxt, 0))
+            else:
+                stack.pop()
+                color[node] = BLACK
+                path.pop()
+                path_index.pop(node, None)
+
+    return cycles
+
+
 def validate_logger_xml(path: Path, strict: bool = False) -> list[ValidationIssue]:
     issues: list[ValidationIssue] = []
 
@@ -169,7 +252,10 @@ def validate_logger_xml(path: Path, strict: bool = False) -> list[ValidationIssu
                 local = extract_byte_addresses(addr_el)
                 if not local:
                     raw = (addr_el.text or "").strip()
-                    err(f"{ppath}/address", f"Ungültiges Adressformat: {raw!r}" if raw else "Leerer address-Block")
+                    err(
+                        f"{ppath}/address",
+                        f"Ungültiges Adressformat: {raw!r}" if raw else "Leerer address-Block",
+                    )
                 for a in local:
                     if a < 0 or a > 0xFFFFFF:
                         err(f"{ppath}/address", f"Adresse außerhalb 24-bit: 0x{a:X}")
@@ -228,7 +314,9 @@ def validate_logger_xml(path: Path, strict: bool = False) -> list[ValidationIssu
                     if pid and resolved == pid:
                         err(rpath, f"Selbst-Referenz auf parameter '{pid}'")
                         self_refs += 1
-                    dep_ids.add(resolved)
+                        # not added to dep_ids → avoids self-loop noise in cycle finder
+                    else:
+                        dep_ids.add(resolved)
                 if ref_ecu:
                     if ref_ecu not in known_ecuparam_ids:
                         alt = ecuparam_name_to_id.get(ref_ecu)
@@ -274,37 +362,9 @@ def validate_logger_xml(path: Path, strict: bool = False) -> list[ValidationIssu
             except ValueError:
                 warn(spath, f"switch bit nicht numerisch: {bit!r}")
 
-    def find_cycles(graph: dict[str, set[str]]) -> list[list[str]]:
-        WHITE, GRAY, BLACK = 0, 1, 2
-        color = {n: WHITE for n in graph}
-        cycles: list[list[str]] = []
-        stack: list[str] = []
-
-        def dfs(node: str) -> None:
-            color[node] = GRAY
-            stack.append(node)
-            for nxt in graph.get(node, ()):
-                if nxt not in color:
-                    continue
-                if color[nxt] == GRAY:
-                    try:
-                        i = stack.index(nxt)
-                        cycles.append(stack[i:] + [nxt])
-                    except ValueError:
-                        cycles.append([nxt, node, nxt])
-                elif color[nxt] == WHITE:
-                    dfs(nxt)
-            stack.pop()
-            color[node] = BLACK
-
-        for n in list(graph):
-            if color.get(n, BLACK) == WHITE:
-                dfs(n)
-        return cycles
-
-    cycles = find_cycles(derived_deps)
+    cycles = find_dependency_cycles(derived_deps)
     for cyc in cycles:
-        err("/", "Zyklen in depends-Graph: " + " → ".join(cyc))
+        err("/", "Zyklus in depends-Graph: " + " → ".join(cyc))
 
     info(
         "/",
