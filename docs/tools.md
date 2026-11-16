@@ -15,48 +15,36 @@ Enthält Schema-Validierung, Ref-Existenz, Zyklenerkennung und **Graph-Export**.
 | `tools/ssm2_xml_generate.py` | Parse + Header-Generator |
 | `tools/ssm2_xml_graph.py` | Depends-Graph → Mermaid / DOT / ASCII |
 
-### Schnellstart
-
-```bash
-python tools/gen_parameters.py path/to/logger.xml --validate-only
-python tools/gen_parameters.py path/to/logger.xml --list-ecus
-python tools/gen_parameters.py path/to/logger.xml --ecu 2F12785606 -o components/subaru_ssm2/ssm2_parameters.h
-```
-
 ### Graph-Visualisierung
 
 ```bash
-# Mermaid (GitHub-README / Markdown-Preview)
+# Mermaid (Layout optimiert)
 python tools/gen_parameters.py logger.xml --graph mermaid --graph-out depends.md --graph-only
 
-# Graphviz DOT → PNG
+# Feste Richtung
+python tools/gen_parameters.py logger.xml --graph mermaid --graph-dir TB --graph-only
+python tools/gen_parameters.py logger.xml --graph mermaid --graph-dir LR --graph-out depends.md --graph-only
+
+# Graphviz
 python tools/gen_parameters.py logger.xml --graph dot --graph-out depends.dot --graph-only
 dot -Tpng depends.dot -o depends.png
-
-# Kompakte Textliste
-python tools/gen_parameters.py logger.xml --graph ascii --graph-only
 ```
 
 | Flag | Bedeutung |
 |------|-----------|
-| `--graph mermaid\|dot\|ascii` | Format wählen |
-| `--graph-out PATH` | In Datei schreiben (sonst stdout) |
-| `--graph-only` | Nur Graph, kein Header |
+| `--graph mermaid\|dot\|ascii` | Format |
+| `--graph-out PATH` | Datei (sonst stdout) |
+| `--graph-only` | Nur Graph |
+| `--graph-dir LR\|RL\|TB\|BT` | Mermaid-Richtung (default: **auto**) |
 
-**Legende**
+**Mermaid-Layout (automatisch)**
 
-- **derived** (blau/Box): Parameter mit `<depends>`
-- **base** (grau/Ellipse): referenzierte Basis-Parameter
-- **cycle** (rot): Knoten/Kanten in einem erkannten Zyklus
+- `%%{init}%%`: `curve: basis`, `nodeSpacing: 28`, `rankSpacing: 48`
+- **auto-Richtung:** `TB` ab 12 derived-Knoten, sonst `LR`
+- **Subgraphs:** `Cycles` · `Derived` · `Base`
+- kurze Labels (max. ~28 Zeichen), Escaping von Sonderzeichen
+- Cycle-Kanten: dicke rote `linkStyle` / `==>`
 
-### Ref-Existenz (`depends`)
-
-- Pass 1 sammelt alle `parameter`-/`ecuparam`-IDs (und Name→ID)
-- `<ref parameter="…">` muss existieren (sonst **error**)
-- Selbst-Referenz → **error**
-- Zyklen im Derived-Graphen → **error** (iterative DFS, dedupliziert)
-- Statistik: `unresolved_refs`, `self_refs`, `dep_cycles`
-
-Exit-Code: `0` ohne Errors, `1` bei Errors.
+**Legende:** derived = blau · base = grau · cycle = rot
 
 Siehe ROADMAP Phase 4.

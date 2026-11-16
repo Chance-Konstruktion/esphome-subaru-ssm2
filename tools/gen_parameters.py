@@ -6,9 +6,8 @@ für esphome-subaru-ssm2
 Usage:
   python tools/gen_parameters.py logger.xml --validate-only
   python tools/gen_parameters.py logger.xml --ecu 2F12785606
-  python tools/gen_parameters.py logger.xml --list-ecus
-  python tools/gen_parameters.py logger.xml --graph mermaid --graph-out depends.md
-  python tools/gen_parameters.py logger.xml --graph dot --graph-out depends.dot --graph-only
+  python tools/gen_parameters.py logger.xml --graph mermaid --graph-out depends.md --graph-only
+  python tools/gen_parameters.py logger.xml --graph mermaid --graph-dir TB --graph-only
 """
 from __future__ import annotations
 
@@ -17,7 +16,6 @@ import sys
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-# Allow "python tools/gen_parameters.py" by putting tools/ on sys.path
 _TOOLS_DIR = Path(__file__).resolve().parent
 if str(_TOOLS_DIR) not in sys.path:
     sys.path.insert(0, str(_TOOLS_DIR))
@@ -62,6 +60,11 @@ def main() -> int:
         action="store_true",
         help="Nur Graph erzeugen, kein Header / keine Validierungspflicht",
     )
+    ap.add_argument(
+        "--graph-dir",
+        choices=("LR", "RL", "TB", "BT"),
+        help="Mermaid-Richtung (default: auto – TB ab 12 derived, sonst LR)",
+    )
     args = ap.parse_args()
 
     if not args.xml.exists():
@@ -80,7 +83,9 @@ def main() -> int:
         return 0
 
     if args.graph and args.graph_only:
-        text = export_graph(args.xml, fmt=args.graph, out=args.graph_out)
+        text = export_graph(
+            args.xml, fmt=args.graph, out=args.graph_out, direction=args.graph_dir
+        )
         if args.graph_out:
             print(f"Graph geschrieben → {args.graph_out} ({args.graph})", file=sys.stderr)
         else:
@@ -92,9 +97,14 @@ def main() -> int:
         rc = print_validation_report(issues)
         if args.validate_only:
             if args.graph:
-                text = export_graph(args.xml, fmt=args.graph, out=args.graph_out)
+                text = export_graph(
+                    args.xml, fmt=args.graph, out=args.graph_out, direction=args.graph_dir
+                )
                 if args.graph_out:
-                    print(f"Graph geschrieben → {args.graph_out} ({args.graph})", file=sys.stderr)
+                    print(
+                        f"Graph geschrieben → {args.graph_out} ({args.graph})",
+                        file=sys.stderr,
+                    )
                 else:
                     sys.stdout.write(text)
             return rc
@@ -107,13 +117,11 @@ def main() -> int:
             return rc
 
     if args.graph:
-        text = export_graph(args.xml, fmt=args.graph, out=args.graph_out)
+        text = export_graph(
+            args.xml, fmt=args.graph, out=args.graph_out, direction=args.graph_dir
+        )
         if args.graph_out:
             print(f"Graph geschrieben → {args.graph_out} ({args.graph})", file=sys.stderr)
-        else:
-            # avoid mixing graph with parameter listing on stdout when generating header
-            if args.graph_only or args.validate_only:
-                sys.stdout.write(text)
 
     params = parse_logger_xml(
         args.xml,
